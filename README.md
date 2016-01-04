@@ -12,5 +12,5 @@ Changes compared to OpenFace:
 
 Results:
 - on CASIA it get better results than original code, up to 88%. 
-- using Felix_V1 with some noise produce ~91%
-- Felix_V2 (2.5M) does not produce better results, do not know why
+- using Felix_V1(CASIA+FaceScrub) with some noise produce ~91%
+

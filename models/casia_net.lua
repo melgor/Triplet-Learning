@@ -91,7 +91,7 @@ function createModel(nGPU)
    -- net:add(nn.Reshape(320))
 
    net:add(nn.View(320))
-   net:add(nn.Linear(320, 128))
+   net:add(nn.Linear(320, opt.embSize))
    net:add(nn.Normalize(2))
   
    

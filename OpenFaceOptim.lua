@@ -157,8 +157,8 @@ function OpenFaceOptim:optimizeTripletFast(optimMethod, inputs, output, criterio
   
   local numImages = inputs:size(1)
   local err = criterion:forward(output)
-
   local df_do = criterion:backward(output)
+
   --map gradient to the index of input
   gradient_all = torch.CudaTensor(numImages,output[1]:size(2))
   gradient_all:zero()
@@ -168,10 +168,11 @@ function OpenFaceOptim:optimizeTripletFast(optimMethod, inputs, output, criterio
       gradient_all[mapper[i][2]]:add(df_do[2][i])
       gradient_all[mapper[i][3]]:add(df_do[3][i])
   end
-  --get average gradient per example
-  for i=1,numImages do
-      if averegeUse[i] ~= 0 then gradient_all[i]:div(averegeUse[i])  end
-  end
+  --get average gradient per example: Not sure if it is right idea, so now Turn Off
+--   for i=1,numImages do
+--       if averegeUse[i] ~= 0 then gradient_all[i]:div(averegeUse[i])  end
+--   end
+--   print (('Gradient Averege: %f: '):format(torch.abs(gradient_all):sum()))
   self.model:backward(inputs, gradient_all)
 
   -- We'll set these in the loop that iterates over each module. Get them
@@ -184,15 +185,15 @@ function OpenFaceOptim:optimizeTripletFast(optimMethod, inputs, output, criterio
 
   for curMod, opt in pairs(self.modulesToOptState) do
      on_device_for_module(curMod, function()
-                             local curModParams = self.weight_bias_parameters(curMod)
+          local curModParams = self.weight_bias_parameters(curMod)
           -- expects either an empty table or 2 element table, one for weights
           -- and one for biases
-                             assert(pl.tablex.size(curModParams) == 0 or
-                                       pl.tablex.size(curModParams) == 2)
+	        assert(pl.tablex.size(curModParams) == 0 or
+		        pl.tablex.size(curModParams) == 2)
           if curModParams then
              for i, tensor in ipairs(curModParams) do
                 if curModParams[i] then
-                      -- expect param, gradParam pair
+                   -- expect param, gradParam pair
                    curParam, curGrad = table.unpack(curModParams[i])
                    assert(curParam and curGrad)
                    optimMethod(fEvalMod, curParam, opt[i])

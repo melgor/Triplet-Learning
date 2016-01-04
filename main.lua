@@ -25,7 +25,7 @@ paths.dofile('util.lua')
 paths.dofile('data.lua')
 paths.dofile('model_fast.lua')
 paths.dofile('train_fast.lua')
-paths.dofile('test_fast.lua')
+-- paths.dofile('test_fast.lua')
 
 
 if opt.peoplePerBatch > nClasses then

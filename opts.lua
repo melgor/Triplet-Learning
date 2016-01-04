@@ -38,7 +38,6 @@ function M.parse(arg)
    cmd:option('-epochNumber',     1,    'Manual epoch number (useful on restarts)')
    cmd:option('-peoplePerBatch',  10,   'Number of people to sample in each mini-batch.')
    cmd:option('-imagesPerPerson', 14,   'Number of images to sample per person in each mini-batch.')
-   cmd:option('-batchSize',   140,   'Minibatch size')
    cmd:option('-GPU',         1, 'Default preferred GPU')
    cmd:option('-nGPU',        1, 'Number of GPUs to use by default')
 
@@ -46,9 +45,12 @@ function M.parse(arg)
    cmd:option('-retrain',     'none', 'provide path to model to retrain with')
    cmd:option('-modelDef', '../models/openface/nn4.def.cudnn.lua', 'path to model definiton')
    cmd:option('-imgDim', 96, 'Image dimension. nn2=224, nn4=96')
+   cmd:option('-embSize', 128, 'size of embedding from model')
+   cmd:option('-alpha', 0.2, 'margin in TripletLoss')
    cmd:text()
 
    local opt = cmd:parse(arg or {})
+   opt.batchSize = opt.peoplePerBatch * opt.imagesPerPerson
    os.execute('mkdir -p ' .. opt.cache)
    local count = 1
    for f in lfs.dir(opt.cache) do

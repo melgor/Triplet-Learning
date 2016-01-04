@@ -318,7 +318,7 @@ function createModel(nGPU)
    -- net:add(nn.Reshape(1024))
 
    net:add(nn.View(1024))
-   net:add(nn.Linear(1024, 128))
+   net:add(nn.Linear(1024, opt.embSize))
    net:add(nn.Normalize(2))
 --    
 --    print(#net:cuda():forward(torch.CudaTensor(1,3,96,96)))

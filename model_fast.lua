@@ -17,20 +17,10 @@ else
    modelAnchor = createModel(opt.nGPU)
 end
 
--- modelPos = modelAnchor:clone('weight', 'bias', 'gradWeight', 'gradBias')
--- modelNeg = modelAnchor:clone('weight', 'bias', 'gradWeight', 'gradBias')
--- 
--- model = nn.ParallelTable()
--- model:add(modelAnchor)
--- model:add(modelPos)
--- model:add(modelNeg)
-
-alpha = 0.2
-criterion = nn.TripletEmbeddingCriterion(alpha)
+criterion = nn.TripletEmbeddingCriterion(opt.alpha)
 
 model = modelAnchor:cuda()
 model = makeDataParallel(model, opt.nGPU)
--- model = model:cuda()
 criterion:cuda()
 
 print('=> Model')

@@ -112,160 +112,97 @@ local numPerClass = torch.FloatTensor()
 local timer = torch.Timer()
 function trainBatch(inputsThread, numPerClassThread)
    if batchNumber >= opt.epochSize then
-      return
-   end
+    return
+  end
 
-   cutorch.synchronize()
-   timer:reset()
-   receiveTensor(inputsThread, inputsCPU)
-   receiveTensor(numPerClassThread, numPerClass)
+  cutorch.synchronize()
+  timer:reset()
+  receiveTensor(inputsThread, inputsCPU)
+  receiveTensor(numPerClassThread, numPerClass)
 
-   outDim = 128
-   local numImages = inputsCPU:size(1)
-   local embeddings = torch.Tensor(numImages, outDim)
-   local beginIdx = 1
-   local inputs = torch.CudaTensor()
-   while beginIdx <= numImages do
-      local endIdx = math.min(beginIdx+opt.batchSize-1, numImages)
-      local range = {{beginIdx,endIdx}}
-      local sz = inputsCPU[range]:size()
-      inputs:resize(sz):copy(inputsCPU[range])
-      local reps = model:forward(inputs):float()
-      embeddings[range] = reps
+  local numImages = inputsCPU:size(1)
+  local embeddings = model:forward(inputsCPU:cuda()):float()
 
-      beginIdx = endIdx + 1
-   end
-   assert(beginIdx - 1 == numImages)
+  local as_table = {}
+  local ps_table = {}
+  local ns_table = {}
 
-      
-   --calcualate the number of all possible pairs
-   local allPossiblePairAnchorPositive = 0
-   for i = 1,opt.peoplePerBatch do   
+  local triplet_idx = {}
+  local num_example_per_idx = torch.Tensor(embeddings:size(1))
+  num_example_per_idx:zero()
+
+  local tripIdx = 1
+  local embStartIdx = 1
+  local numTrips = 0
+  for i = 1,opt.peoplePerBatch do
     local n = numPerClass[i]
-    for j = 1,n-1 do
-      for pair = j,n-1 do
-        allPossiblePairAnchorPositive = allPossiblePairAnchorPositive + 1
-      end
-    end
-   end
-   -- print("All possible triplet: " .. allPossiblePairAnchorPositive)
+    for j = 1,n-1 do --for every image in batch
+      local aIdx = embStartIdx + j - 1
+      local diff = embeddings - embeddings[{ {aIdx} }]:expandAs(embeddings)
+      local norms = diff:norm(2, 2):pow(2):squeeze()    --L2 norm have be squared
+      for pair = j,n-1 do --create all posible positive pairs
+        local pIdx = embStartIdx + pair
+        -- Select a semi-hard negative that has a distance
+        -- further away from the positive exemplar. Oxford-Face Idea
 
-   -- local numTrips = numImages - opt.peoplePerBatch
-   local numTrips  = allPossiblePairAnchorPositive 
-   -- local as = torch.Tensor(numTrips, outDim)
-   -- local ps = torch.Tensor(numTrips, outDim)
-   -- local ns = torch.Tensor(numTrips, outDim)
+        --choose random example which is in margin
+        local fff = (embeddings[aIdx]-embeddings[pIdx]):norm(2)
+        local normsP = norms - torch.Tensor(embeddings:size(1)):fill(fff*fff)  --L2 norm have be squared
+        --clean the idx of same class by setting to them max value
+        normsP[{{embStartIdx,embStartIdx +n-1}}] = normsP:max()
+        -- get indexes of example which are inside margin
+        local in_margin = normsP:lt(opt.alpha)
+        local allNeg = torch.find(in_margin, 1)
 
-   local as_table = {}
-   local ps_table = {}
-   local ns_table = {}
-
-   local triplet_idx = {}
-   local num_example_per_idx = torch.Tensor(embeddings:size(1))
-   num_example_per_idx:zero()
-
-   local alpha = 0.2
-   local tripIdx = 1
-   local shuffle = torch.randperm(numTrips)
-   local embStartIdx = 1
-   local randomNegNum = 0
-   for i = 1,opt.peoplePerBatch do
-      local n = numPerClass[i]
-      for j = 1,n-1 do --for every image in batch
-        local aIdx = embStartIdx + j -1
-        local diff = embeddings - embeddings[{ {aIdx} }]:expandAs(embeddings)
-        local norms = diff:norm(2, 2):squeeze()    
-        for pair = j,n-1 do --create all posible positive pairs
-          local pIdx = embStartIdx + pair
-          -- Select a semi-hard negative that has a distance
-          -- further away from the positive exemplar.
-
-          local selNegIdx = embStartIdx
-          while selNegIdx >= embStartIdx and selNegIdx <= embStartIdx+n-1 do
-              selNegIdx = (torch.random() % numImages) + 1
-          end
-          local randomNeg = true
-          
-          --choose random example which is in margin 
-          local normsP = norms - torch.Tensor(embeddings:size(1)):fill((embeddings[aIdx]-embeddings[pIdx]):norm())
-          --clean the idx of same class
-          normsP[{{embStartIdx,embStartIdx +n-1}}] = normsP:max()
-          -- get indexes of example which are inside margin
-          local in_margin = normsP:lt(alpha)
-	  local allNeg = torch.find(in_margin, 1)
-          if table.getn(allNeg) ~= 0 then 
-              selNegIdx = allNeg[math.random (table.getn(allNeg))] 
-              randomNeg = false
-          end
-
-          --use only non-random triplets. Random triples (which are beyond margin) will just produce gradient = 0, so averege gradient will decrease
-          if randomNeg == true then 
-            randomNegNum = randomNegNum + 1 
-          else
-            --get embeding of each example 
-            -- as[tripIdx] = embeddings[aIdx]
-            -- ps[tripIdx] = embeddings[pIdx]
-            -- ns[tripIdx] = embeddings[selNegIdx]
-            table.insert(as_table,embeddings[aIdx])
-            table.insert(ps_table,embeddings[pIdx])
-            table.insert(ns_table,embeddings[selNegIdx])
-            -- get original idx of triplets
-            table.insert(triplet_idx,{aIdx,pIdx,selNegIdx})
-            -- increase number of times of using each example, need for averaging then
-            num_example_per_idx[aIdx] = num_example_per_idx[aIdx] + 1
-            num_example_per_idx[pIdx] = num_example_per_idx[pIdx] + 1
-            num_example_per_idx[selNegIdx] = num_example_per_idx[selNegIdx] + 1
-            tripIdx = tripIdx + 1
-          end
+        if table.getn(allNeg) ~= 0 then  --use only non-random triplets. Random triples (which are beyond margin) will just produce gradient = 0, so averege gradient will decrease
+          selNegIdx = allNeg[math.random (table.getn(allNeg))] 
+          --get embeding of each example 
+          table.insert(as_table,embeddings[aIdx])
+          table.insert(ps_table,embeddings[pIdx])
+          table.insert(ns_table,embeddings[selNegIdx])
+          -- get original idx of triplets
+          table.insert(triplet_idx,{aIdx,pIdx,selNegIdx})
+          -- increase number of times of using each example, need for averaging then
+          num_example_per_idx[aIdx] = num_example_per_idx[aIdx] + 1
+          num_example_per_idx[pIdx] = num_example_per_idx[pIdx] + 1
+          num_example_per_idx[selNegIdx] = num_example_per_idx[selNegIdx] + 1
+          tripIdx = tripIdx + 1
         end
+
+        numTrips = numTrips + 1
       end
-      embStartIdx = embStartIdx + n
-   end
-   assert(embStartIdx - 1 == numImages)
-   -- assert(tripIdx - 1 == numTrips)
-   print(('  + (nRandomNegs, nTrips, nTripsRight) = (%d, %d, %d)'):format(randomNegNum, numTrips,table.getn(as_table)))
-   local as = torch.concat(as_table):view(table.getn(as_table),outDim)
-   local ps = torch.concat(ps_table):view(table.getn(ps_table),outDim)
-   local ns = torch.concat(ns_table):view(table.getn(ns_table),outDim)
-
-   local beginIdx = 1
-   local inCuda = torch.CudaTensor()
-   local asCuda = torch.CudaTensor()
-   local psCuda = torch.CudaTensor()
-   local nsCuda = torch.CudaTensor()
-
-   -- Return early if the loss is 0 for `numZeros` iterations.
-   local numZeros = 4
-   local zeroCounts = torch.IntTensor(numZeros):zero()
-   local zeroIdx = 1
-
-   -- Return early if the loss shrinks too much.
-   -- local firstLoss = nil
-
-   -- TODO: Should be <=, but batches with just one image cause errors.
-    local sz = as:size()
-    inCuda = inputsCPU:cuda()
-    asCuda:resize(sz):copy(as)
-    psCuda:resize(sz):copy(ps)
-    nsCuda:resize(sz):copy(ns)
-    local err, outputs = optimator:optimizeTripletFast(optimMethod,
-                                                   inCuda,
-                                                   {asCuda, psCuda, nsCuda},
-                                                   criterion, triplet_idx, num_example_per_idx)
- 
-    -- DataParallelTable's syncParameters
-    model:apply(function(m) if m.syncParameters then m:syncParameters() end end)  
-    cutorch.synchronize()
-    batchNumber = batchNumber + 1
-    print(('Epoch: [%d][%d/%d]\tTime %.3f\ttripErr %.2e'):format(
-          epoch, batchNumber, opt.epochSize, timer:time().real, err))
-    timer:reset()
-    triplet_loss = triplet_loss + err
-
-    -- Return early if the loss is 0 for `numZeros` iterations.
-    zeroCounts[zeroIdx] = (err == 0.0) and 1 or 0 -- Boolean to int.
-    zeroIdx = (zeroIdx % numZeros) + 1
-    if zeroCounts:sum() == numZeros then
-       return
     end
+    embStartIdx = embStartIdx + n
+  end
+  assert(embStartIdx - 1 == numImages)
+  print(('  + (nTrips, nTripsRight) = (%d, %d)'):format(numTrips,table.getn(as_table)))
+
+  local as = torch.concat(as_table):view(table.getn(as_table),opt.embSize)
+  local ps = torch.concat(ps_table):view(table.getn(ps_table),opt.embSize)
+  local ns = torch.concat(ns_table):view(table.getn(ns_table),opt.embSize)
+
+  local beginIdx = 1
+  local inCuda = torch.CudaTensor()
+  local asCuda = torch.CudaTensor()
+  local psCuda = torch.CudaTensor()
+  local nsCuda = torch.CudaTensor()
+
+  local sz = as:size()
+  inCuda = inputsCPU:cuda()
+  asCuda:resize(sz):copy(as)
+  psCuda:resize(sz):copy(ps)
+  nsCuda:resize(sz):copy(ns)
+  local err, outputs = optimator:optimizeTripletFast(optimMethod,
+                                                 inCuda,
+                                                 {asCuda, psCuda, nsCuda},
+                                                 criterion, triplet_idx, num_example_per_idx)
+
+  -- DataParallelTable's syncParameters
+  model:apply(function(m) if m.syncParameters then m:syncParameters() end end)  
+  cutorch.synchronize()
+  batchNumber = batchNumber + 1
+  print(('Epoch: [%d][%d/%d]\tTime %.3f\ttripErr %.2e'):format(
+        epoch, batchNumber, opt.epochSize, timer:time().real, err))
+  timer:reset()
+  triplet_loss = triplet_loss + err
 end

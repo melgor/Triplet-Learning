@@ -41,7 +41,7 @@ function train()
    if opt.nGPU == 1 then
     model:cuda() -- get it back on the right GPUs.
    end
-   
+
    local tm = torch.Timer()
    triplet_loss = 0
 
@@ -140,23 +140,23 @@ function trainBatch(inputsThread, numPerClassThread)
       local aIdx = embStartIdx + j - 1
       local diff = embeddings - embeddings[{ {aIdx} }]:expandAs(embeddings)
       local norms = diff:norm(2, 2):pow(2):squeeze()    --L2 norm have be squared
-      for pair = j,n-1 do --create all posible positive pairs
+      for pair = j,n-1 do --create all possible positive pairs
         local pIdx = embStartIdx + pair
         -- Select a semi-hard negative that has a distance
         -- further away from the positive exemplar. Oxford-Face Idea
 
         --choose random example which is in margin
         local fff = (embeddings[aIdx]-embeddings[pIdx]):norm(2)
-        local normsP = norms - torch.Tensor(embeddings:size(1)):fill(fff*fff)  --L2 norm have be squared
+        local normsP = norms - torch.Tensor(embeddings:size(1)):fill(fff*fff)  --L2 norm should be squared
         --clean the idx of same class by setting to them max value
         normsP[{{embStartIdx,embStartIdx +n-1}}] = normsP:max()
         -- get indexes of example which are inside margin
         local in_margin = normsP:lt(opt.alpha)
         local allNeg = torch.find(in_margin, 1)
 
-        if table.getn(allNeg) ~= 0 then  --use only non-random triplets. Random triples (which are beyond margin) will just produce gradient = 0, so averege gradient will decrease
-          selNegIdx = allNeg[math.random (table.getn(allNeg))] 
-          --get embeding of each example 
+        if table.getn(allNeg) ~= 0 then  --use only non-random triplets. Random triples (which are beyond margin) will just produce gradient = 0, so average gradient will decrease
+          selNegIdx = allNeg[math.random (table.getn(allNeg))]
+          --get embeding of each example
           table.insert(as_table,embeddings[aIdx])
           table.insert(ps_table,embeddings[pIdx])
           table.insert(ns_table,embeddings[selNegIdx])
@@ -198,7 +198,7 @@ function trainBatch(inputsThread, numPerClassThread)
                                                  criterion, triplet_idx, num_example_per_idx)
 
   -- DataParallelTable's syncParameters
-  model:apply(function(m) if m.syncParameters then m:syncParameters() end end)  
+  model:apply(function(m) if m.syncParameters then m:syncParameters() end end)
   cutorch.synchronize()
   batchNumber = batchNumber + 1
   print(('Epoch: [%d][%d/%d]\tTime %.3f\ttripErr %.2e'):format(

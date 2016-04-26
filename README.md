@@ -1,6 +1,9 @@
 # Triplet-Learning
 Training code to reproduce FaceNet
 
+# Note: All changes was merged into https://github.com/cmusatyalab/openface. It is advice to use Original OpenFace code
+
+
 Code for Learning the Triplet Based Network
 
 Changes compared to OpenFace:
